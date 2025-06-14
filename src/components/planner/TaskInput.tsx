@@ -18,7 +18,8 @@ export const TaskInput = () => {
       addTask({
         title: title.trim(),
         estimatedDuration: parseInt(estimatedDuration),
-        priority
+        priority,
+        completed: false, // Fix: add this line
       });
       setTitle('');
       setEstimatedDuration('30');
