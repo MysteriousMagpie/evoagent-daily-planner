@@ -1,69 +1,58 @@
-import { Event } from '../types';
-import * as ical from 'ical';
+import { Event } from '@/types';
+import * as ical from 'ical.js';          // pnpm add ical.js
+import { isToday } from 'date-fns';
 
-// Mock calendar events for demonstration
+/** -------- configuration -------- */
+const DEFAULT_SRC = '/cal/today.ics';     // served from public/ in dev
+const FALLBACK_DELAY = 300;               // ms wait before mock
+
+/** Mock data if real feed missing                                */
 const mockEvents: Event[] = [
   {
-    id: '1',
-    title: 'Team Standup',
-    start: new Date(new Date().setHours(9, 0, 0, 0)),
-    end: new Date(new Date().setHours(9, 30, 0, 0)),
-    description: 'Daily team sync meeting'
+    id: 'standup',
+    title: 'Team Stand-up',
+    start: new Date().setHours(9, 0, 0, 0),
+    end:   new Date().setHours(9, 30, 0, 0),
+    description: 'Daily sync'
   },
   {
-    id: '2',
+    id: 'client',
     title: 'Client Call',
-    start: new Date(new Date().setHours(14, 0, 0, 0)),
-    end: new Date(new Date().setHours(15, 0, 0, 0)),
-    description: 'Quarterly review with client'
-  },
-  {
-    id: '3',
-    title: 'Design Review',
-    start: new Date(new Date().setHours(16, 30, 0, 0)),
-    end: new Date(new Date().setHours(17, 30, 0, 0)),
-    description: 'Review new feature designs'
+    start: new Date().setHours(14, 0, 0, 0),
+    end:   new Date().setHours(15, 0, 0, 0),
+    description: 'Q-review'
   }
-];
+] satisfies Event[];
 
-export const getTodayEvents = async (): Promise<Event[]> => {
-  // Simulate async file reading.
-  await new Promise(resolve => setTimeout(resolve, 500));
-  
-  // In a real implementation, you would need a mechanism to get the iCal file content,
-  // for example, through a file input, as browsers cannot access local file system directly.
-  // Then you would call parseICalFile(fileContent).
-  // For now, we fall back to mock data.
-  const today = new Date();
-  return mockEvents.filter(event => {
-    const eventDate = new Date(event.start);
-    return eventDate.toDateString() === today.toDateString();
-  });
-};
-
-export const parseICalFile = (icalContent: string): Event[] => {
-  // Implementation of iCal parsing using ical.js
+/** Public API – returns only *today’s* VEVENTS, sorted */
+export async function getTodayEvents(src: string = DEFAULT_SRC): Promise<Event[]> {
   try {
-    const data = ical.parseICS(icalContent);
-    const events: Event[] = [];
-    
-    for (const k in data) {
-      if (data.hasOwnProperty(k)) {
-        const ev = data[k] as any; // Using any as @types/ical is not available
-        if (ev.type === 'VEVENT') {
-          events.push({
-            id: ev.uid,
-            title: ev.summary,
-            start: new Date(ev.start),
-            end: new Date(ev.end),
-            description: ev.description,
-          });
-        }
-      }
-    }
-    return events;
-  } catch (error) {
-    console.error("Error parsing iCal content:", error);
-    return []; // Return empty array on error
+    const raw = await fetch(src).then(r => {
+      if (!r.ok) throw new Error('ICS not found');      // fall to mock
+      return r.text();
+    });
+    return parseICalFile(raw).filter(ev => isToday(ev.start));
+  } catch (err) {
+    console.warn('[ical] using mock events →', err);
+    await new Promise(r => setTimeout(r, FALLBACK_DELAY));
+    const today = new Date().toDateString();
+    return mockEvents.filter(e => new Date(e.start).toDateString() === today);
   }
-};
+}
+
+/** Parse ICS text → Event[] (browser safe via ical.js)            */
+export function parseICalFile(ics: string): Event[] {
+  const comp  = new ical.Component(ical.parse(ics));
+  const ve    = comp.getAllSubcomponents('vevent') as ical.Component[];
+
+  return ve.map(v => {
+    const ev = new ical.Event(v);
+    return {
+      id:   ev.uid ?? crypto.randomUUID(),
+      title: ev.summary,
+      start: ev.startDate.toJSDate(),
+      end:   ev.endDate.toJSDate(),
+      description: ev.description ?? ''
+    } as Event;
+  }).sort((a, b) => +a.start - +b.start);
+}
