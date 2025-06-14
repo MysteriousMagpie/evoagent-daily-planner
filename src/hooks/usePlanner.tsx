@@ -1,9 +1,9 @@
-
-import { createContext, useContext, useReducer, ReactNode } from 'react';
-import { Event, Task, DailyPlan } from '../types';
+import { createContext, useContext, useReducer, ReactNode, useEffect } from 'react';
+import { Event, Task, DailyPlan, PlanItem } from '../types';
 import { generateDailyPlan } from '../lib/plan';
 import { getTodayEvents } from '../lib/ical';
 import { getOpenTasks } from '../lib/tasks';
+import { format } from 'date-fns';
 
 interface PlannerState {
   events: Event[];
@@ -24,13 +24,49 @@ type PlannerAction =
   | { type: 'APPROVE_PLAN' }
   | { type: 'SET_ERROR'; payload: string };
 
-const initialState: PlannerState = {
-  events: [],
-  tasks: getOpenTasks(),
-  currentPlan: null,
-  isLoading: false,
-  error: null
+const getInitialState = (): PlannerState => {
+  try {
+    const storedTasks = localStorage.getItem('tasks');
+    const storedPlan = localStorage.getItem('currentPlan');
+
+    const tasks = storedTasks ? JSON.parse(storedTasks) : getOpenTasks();
+    
+    let currentPlan = null;
+    if (storedPlan) {
+      const parsedPlan = JSON.parse(storedPlan);
+      // Revive date objects from string representation
+      currentPlan = {
+        ...parsedPlan,
+        date: new Date(parsedPlan.date),
+        items: parsedPlan.items.map((item: PlanItem) => ({
+          ...item,
+          start: new Date(item.start),
+          end: new Date(item.end),
+        })),
+      };
+    }
+    
+    return {
+      events: [],
+      tasks,
+      currentPlan,
+      isLoading: false,
+      error: null,
+    };
+  } catch (error) {
+    console.error("Failed to load state from localStorage", error);
+    // Fallback to default state if parsing fails
+    return {
+      events: [],
+      tasks: getOpenTasks(),
+      currentPlan: null,
+      isLoading: false,
+      error: null,
+    };
+  }
 };
+
+const initialState: PlannerState = getInitialState();
 
 const plannerReducer = (state: PlannerState, action: PlannerAction): PlannerState => {
   switch (action.type) {
@@ -84,8 +120,39 @@ const PlannerContext = createContext<{
   savePlan: () => void;
 } | null>(null);
 
+const generatePlanMarkdown = (plan: DailyPlan): string => {
+  let markdown = `# Daily Plan - ${format(plan.date, 'EEEE, MMMM d, yyyy')}\n\n`;
+  plan.items.forEach(item => {
+    const startTime = format(item.start, 'HH:mm');
+    const endTime = format(item.end, 'HH:mm');
+    const checkbox = item.type === 'task' ? '- [ ]' : '-';
+    markdown += `${checkbox} ${startTime}-${endTime}: ${item.title} (${item.type})\n`;
+  });
+  return markdown;
+};
+
 export const PlannerProvider = ({ children }: { children: ReactNode }) => {
   const [state, dispatch] = useReducer(plannerReducer, initialState);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('tasks', JSON.stringify(state.tasks));
+    } catch (error) {
+      console.error("Failed to save tasks to localStorage", error);
+    }
+  }, [state.tasks]);
+
+  useEffect(() => {
+    try {
+      if (state.currentPlan) {
+        localStorage.setItem('currentPlan', JSON.stringify(state.currentPlan));
+      } else {
+        localStorage.removeItem('currentPlan');
+      }
+    } catch (error) {
+      console.error("Failed to save plan to localStorage", error);
+    }
+  }, [state.currentPlan]);
 
   const loadTodayEvents = async () => {
     try {
@@ -133,9 +200,11 @@ export const PlannerProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const savePlan = () => {
-    if (state.currentPlan) {
+    if (state.currentPlan && state.currentPlan.approved) {
       console.log('Saving plan to daily note:', state.currentPlan);
-      // Placeholder for saving to daily note
+      const markdown = generatePlanMarkdown(state.currentPlan);
+      localStorage.setItem('dailyPlanMarkdown', markdown);
+      alert('Plan saved as Markdown to localStorage!');
     }
   };
 

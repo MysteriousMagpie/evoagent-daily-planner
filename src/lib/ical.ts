@@ -1,5 +1,5 @@
-
 import { Event } from '../types';
+import * as ical from 'ical';
 
 // Mock calendar events for demonstration
 const mockEvents: Event[] = [
@@ -27,11 +27,13 @@ const mockEvents: Event[] = [
 ];
 
 export const getTodayEvents = async (): Promise<Event[]> => {
-  // Simulate async file reading
+  // Simulate async file reading.
   await new Promise(resolve => setTimeout(resolve, 500));
   
-  // In real implementation, this would parse a local .ics file
-  // For now, return mock data filtered to today
+  // In a real implementation, you would need a mechanism to get the iCal file content,
+  // for example, through a file input, as browsers cannot access local file system directly.
+  // Then you would call parseICalFile(fileContent).
+  // For now, we fall back to mock data.
   const today = new Date();
   return mockEvents.filter(event => {
     const eventDate = new Date(event.start);
@@ -40,8 +42,28 @@ export const getTodayEvents = async (): Promise<Event[]> => {
 };
 
 export const parseICalFile = (icalContent: string): Event[] => {
-  // Placeholder for actual iCal parsing
-  // Would use a library like ical.js in production
-  console.log('Parsing iCal content:', icalContent);
-  return mockEvents;
+  // Implementation of iCal parsing using ical.js
+  try {
+    const data = ical.parseICS(icalContent);
+    const events: Event[] = [];
+    
+    for (const k in data) {
+      if (data.hasOwnProperty(k)) {
+        const ev = data[k] as any; // Using any as @types/ical is not available
+        if (ev.type === 'VEVENT') {
+          events.push({
+            id: ev.uid,
+            title: ev.summary,
+            start: new Date(ev.start),
+            end: new Date(ev.end),
+            description: ev.description,
+          });
+        }
+      }
+    }
+    return events;
+  } catch (error) {
+    console.error("Error parsing iCal content:", error);
+    return []; // Return empty array on error
+  }
 };

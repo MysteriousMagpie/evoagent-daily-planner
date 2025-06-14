@@ -1,11 +1,10 @@
-
 import { Event, Task, PlanItem, DailyPlan } from '../types';
 import { addMinutes, isAfter, isBefore } from 'date-fns';
 
 export const generateDailyPlan = (events: Event[], tasks: Task[]): DailyPlan => {
   const today = new Date();
   const workStart = new Date(today.setHours(8, 0, 0, 0));
-  const workEnd = new Date(today.setHours(18, 0, 0, 0));
+  const workEnd = new Date(today.setHours(22, 0, 0, 0)); // Changed from 18:00 to 22:00
   
   // Convert events to plan items
   const eventItems: PlanItem[] = events.map(event => ({
